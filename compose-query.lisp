@@ -3,6 +3,8 @@
 
 ;;; here we will write DSL for conveniently composing queries to arXiv API
 
+(cl-interpol:enable-interpol-syntax)
+
 (defparameter *arxiv-api-url* "http://export.arxiv.org/api/")
 
 (defparameter *method-names* '("query"))
@@ -19,17 +21,41 @@
   (intern (string (car query)) "KEYWORD"))
 
 (defun atomic-query-p (query)
-  (assoc (query-head query) *query-params-abbrevs*))
+  (and (listp query)
+       (assoc (query-head query) *query-params-abbrevs*)))
 
 (defun composite-query-p (query)
-  (assoc (query-head query) *query-connectives*))
+  (and (listp query)
+       (assoc (query-head query) *query-connectives*)))
 
+(defun %serialize-query (query &optional toplevel)
+  (cond ((atomic-query-p query) (format nil "~a: ~a"
+					(cdr (assoc (query-head query) *query-params-abbrevs*))
+					(%serialize-query (cadr query))))
+	((composite-query-p query)
+	 (let ((it (format nil #?"~a $((cdr (assoc (query-head query) *query-connectives*))) ~a"
+			   (%serialize-query (cadr query))
+			   (if (equal 3 (length query))
+			       (%serialize-query (caddr query))
+			       (%serialize-query (cons (car query) (cddr query)))))))
+	   (if (not toplevel)
+	       #?"($(it))"
+	       it)))
+	((stringp query)
+	 (let ((it (cl-ppcre:split "(\\s|\\t)+" query)))
+	   (if (equal 1 (length it))
+	       (car it)
+	       (if toplevel
+		   (%serialize-query (cons :and it) t)
+		   #?"EXACT $((joinl "_" it))"))))
+	(t (error "I don't know this arXiv query: ~a, perhaps you misspelled it?" query))))
 
-(defun serialize-query (query &optional (toplevel t))
+(defun serialize-query (query)
   "Transform query form Lisp-form to string form"
-  (cond ((atomic-query-p query) ...)
-	((composite-query-p query) ...)
-	(t (error "I don't know this arXiv query: ~a, perhaps you misspelled it?" (car query)))))
+  (%serialize-query query t))
+
+(defun arxiv-get (query)
+  (http-get #?"$(*arxiv-api-url*)query?search_query=$((escape-url-query (serialize-query query)))"))
   
 ;; I want to be able to write something like
 ;; (author (and "Morozov" "Mironov"))
