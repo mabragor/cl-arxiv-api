@@ -55,7 +55,13 @@
   (%serialize-query query t))
 
 (defun arxiv-get (query)
-  (http-get #?"$(*arxiv-api-url*)query?search_query=$((escape-url-query (serialize-query query)))"))
+  (destructuring-bind (code headers stream)
+      (http-get #?"$(*arxiv-api-url*)query?search_query=$((escape-url-query (serialize-query query)))")
+    (if (equal 200 code)
+	;; (parse-stream stream (cxml-xmls:make-xmls-builder))
+	(joinl "~%" (iter (for line in-stream stream using #'read-line)
+				 (collect line)))
+	(error "Some error occured during request: ~a ~a" code headers))))
   
 ;; I want to be able to write something like
 ;; (author (and "Morozov" "Mironov"))
@@ -69,3 +75,13 @@
 ;; Suddenly, there is also EXACT word, which occurs if I use double quotes ... interesting
 
 
+;; (defparameter *a* (arxiv-get '(:author (:and "Popolitov" "Morozov"))))
+
+;; OK, it seems that I don't need an access through OAI-MPH, because it's too coarce --
+;; using it I can download only all metadata
+
+;; I can track papers of a given author(s) by keeping my own database
+;; of papers
+
+;; Some manual work is required to correctly filter wrong people from search results,
+;; but this should be doable.

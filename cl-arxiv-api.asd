@@ -5,7 +5,7 @@
   :author "Alexandr Popolitov <popolit@gmail.com>"
   :license "MIT"
   :serial t
-  :depends-on (#:trivial-http #:cl-interpol #:cl-ppcre #:cg-common-ground #:iterate)
+  :depends-on (#:trivial-http #:cl-interpol #:cl-ppcre #:cg-common-ground #:iterate #:cxml)
   :components ((:file "package")
 	       (:file "compose-query")
 	       (:file "parse-query")
