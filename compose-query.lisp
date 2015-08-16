@@ -54,14 +54,32 @@
   "Transform query form Lisp-form to string form"
   (%serialize-query query t))
 
-(defun arxiv-get (query)
-  (destructuring-bind (code headers stream)
-      (http-get #?"$(*arxiv-api-url*)query?search_query=$((escape-url-query (serialize-query query)))")
-    (if (equal 200 code)
-	;; (parse-stream stream (cxml-xmls:make-xmls-builder))
-	(joinl "~%" (iter (for line in-stream stream using #'read-line)
-				 (collect line)))
-	(error "Some error occured during request: ~a ~a" code headers))))
+(let ((sort-by-map '((:relevance . "relevance") (:rel . "relevance")
+		     (:last-updated . "lastUpdatedDate") (:update . "lastUpdatedDate")
+		     (:submitted . "submittedDate") (:submit . "submittedDate")
+		     ))
+      (sort-order-map '((:ascending . "ascending") (:asc . "ascending")
+			(:descending . "descending") (:desc . "descending")
+			)))
+  (defun arxiv-get-raw (query &key
+			(start nil start-p) (max-results nil max-results-p) (id-list nil id-list-p)
+			(sort-by nil sort-by-p) (sort-order nil sort-order-p))
+    (let ((query-str (if query #?"search_query=$((escape-url-query (serialize-query query)))"))
+	  (start-str (if start-p #?"start=$(start)"))
+	  (max-results-str (if max-results-p #?"max_results=$(max-results)"))
+	  (id-list-str (if id-list-p (joinl "," id-list)))
+	  (sort-by-str (if sort-by-p #?"sortBy=$((cdr (assoc sort-by sort-by-map)))"))
+	  (sort-order-str (if sort-order-p #?"sortOrder=$((cdr (assoc sort-order sort-order-map)))")))
+      (destructuring-bind (code headers stream)
+	  (http-get (format nil #?"~aquery?~a"
+			    *arxiv-api-url*
+			    (joinl "&" (remove-if-not #'identity
+						      (list query-str id-list-str start-str max-results-str
+							    sort-by-str sort-order-str)))))
+	(if (equal 200 code)
+	    (joinl "~%" (iter (for line in-stream stream using #'read-line)
+			      (collect line)))
+	    (error "Some error occured during request: ~a ~a" code headers))))))
   
 ;; I want to be able to write something like
 ;; (author (and "Morozov" "Mironov"))

@@ -2,5 +2,12 @@
 
 (in-package #:cl-arxiv-api)
 
-;;; "cl-arxiv-api" goes here. Hacks and glory await!
+(defun arxiv-get (query &key
+		  (start nil start-p) (max-results nil max-results-p) (id-list nil id-list-p)
+		  (sort-by nil sort-by-p) (sort-order nil sort-order-p))
+  (parse-arxiv-response (apply #'arxiv-get-raw `(,query ,@(if start-p `(:start ,start))
+							,@(if max-results-p `(:max-results ,max-results))
+							,@(if id-list-p `(:id-list ,id-list))
+							,@(if sort-by-p `(:sort-by ,sort-by))
+							,@(if sort-order-p `(:sort-order ,sort-order))))))
 
