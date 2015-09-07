@@ -47,7 +47,7 @@
 	       (car it)
 	       (if toplevel
 		   (%serialize-query (cons :and it) t)
-		   #?"EXACT $((joinl "_" it))"))))
+		   #?"EXACT $((format nil "~{~a~^_~}" it))"))))
 	(t (error "I don't know this arXiv query: ~a, perhaps you misspelled it?" query))))
 
 (defun serialize-query (query)
@@ -67,18 +67,20 @@
     (let ((query-str (if query #?"search_query=$((escape-url-query (serialize-query query)))"))
 	  (start-str (if start-p #?"start=$(start)"))
 	  (max-results-str (if max-results-p #?"max_results=$(max-results)"))
-	  (id-list-str (if id-list-p (joinl "," id-list)))
+	  (id-list-str (if id-list-p (format nil "~{~a~^,~}" id-list)))
 	  (sort-by-str (if sort-by-p #?"sortBy=$((cdr (assoc sort-by sort-by-map)))"))
 	  (sort-order-str (if sort-order-p #?"sortOrder=$((cdr (assoc sort-order sort-order-map)))")))
       (destructuring-bind (code headers stream)
 	  (http-get (format nil #?"~aquery?~a"
 			    *arxiv-api-url*
-			    (joinl "&" (remove-if-not #'identity
-						      (list query-str id-list-str start-str max-results-str
-							    sort-by-str sort-order-str)))))
+			    (format nil "~{~a~^&~}"
+				    (remove-if-not #'identity
+						   (list query-str id-list-str start-str max-results-str
+							 sort-by-str sort-order-str)))))
 	(if (equal 200 code)
-	    (joinl "~%" (iter (for line in-stream stream using #'read-line)
-			      (collect line)))
+	    (format nil "~{~a~^~%~}"
+		    (iter (for line in-stream stream using #'read-line)
+			  (collect line)))
 	    (error "Some error occured during request: ~a ~a" code headers))))))
   
 ;; I want to be able to write something like

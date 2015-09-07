@@ -1,9 +1,7 @@
 
 (in-package #:cl-arxiv-api)
 
-
-
-;; (enable-quasiquote-2.0)
+(cl-interpol:enable-interpol-syntax)
 
 ;;; Here we will parse response of arXiv, which is in Atom 1.0 format
 
@@ -23,6 +21,10 @@
   (defparameter *namespace-map* '((:atom . "http://www.w3.org/2005/Atom")
 				  (:opensearch . "http://a9.com/-/spec/opensearch/1.1/")
 				  (:arxiv . "http://arxiv.org/schemas/atom")))
+  (defun subcamcaseize (name)
+    (let ((lst (cl-ppcre:split "-" (string-downcase name))))
+      (format nil "~{~a~}" (cons (car lst)
+				 (mapcar #'string-capitalize (cdr lst))))))
   (defun ensure-namespace-free (thing)
     (if (atom thing)
 	thing
@@ -32,9 +34,10 @@
 					 (list (car spec) (cdr (assoc (cadr spec) *namespace-map*)))
 					 (list spec (cdr (assoc *default-namespace* *namespace-map*))))
       (values (cond ((stringp name) name)
-		    ((symbolp name) (cg-common-ground::subcamcaseize name))
+		    ((symbolp name) (subcamcaseize name))
 		    (t (error "Don't know how to coerce this to an XML identifier: ~a" name)))
-	      (cond ((stringp name) (destringify-symbol name "KEYWORD"))
+	      (cond ((stringp name) (intern (cl-ppcre:regex-replace-all "_" (string-upcase name) "-")
+					    "KEYWORD"))
 		    ((symbolp name) (intern (string name) "KEYWORD"))
 		    (t (error "Don't know how to coerce this to keyword: ~a" name)))
 	      space))))
@@ -88,7 +91,7 @@
 
 (defun parse-as-list (smth)
   (iter (for elt in smth)
-	(format t "~a~%" elt)
+	;; (format t "~a~%" elt)
 	(when (not (empty-line-p elt))
 	  (handler-case (collect (try-to-descend elt))
 	    (arxiv-parse-error () (warn "Failed to parse ~s, collecting verbatim" elt)

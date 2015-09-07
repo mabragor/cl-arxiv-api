@@ -6,10 +6,9 @@
   :license "MIT"
   :serial t
   :version "0.1"
-  :depends-on (#:trivial-http #:cl-interpol #:cl-ppcre #:cg-common-ground #:iterate #:cxml)
+  :depends-on (#:trivial-http #:cl-interpol #:cl-ppcre #:iterate #:cxml)
   :components ((:file "package")
 	       (:file "compose-query")
-	       (:file "sample-query")
 	       (:file "parse-query")
                (:file "cl-arxiv-api")))
 

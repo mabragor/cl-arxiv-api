@@ -38,6 +38,7 @@ these values coincide up to a factor, independent of boundary conditions.
 
 As is clear from the example, ARXIV-GET parses XML returned by arXiv into simple assoc-list.
 CL-ARXIV-API exports two more functions:
-  -- ARXIV-GET-RAW, which does not do the parsing, returing raw XML
-  -- PARSE-ARXIV-RESPONSE, which actually does parsing of XML to assoc-list
+
+  * ARXIV-GET-RAW, which does not do the parsing, returing raw XML
+  * PARSE-ARXIV-RESPONSE, which actually does parsing of XML to assoc-list
 
