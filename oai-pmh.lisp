@@ -1,6 +1,8 @@
 
 (in-package #:cl-arxiv-api)
 
+(cl-interpol:enable-interpol-syntax)
+
 ;;; Here we will write fetching of metadata (in a bulk fashion, through OAI-PMH protocol)
 
 (defparameter *oai-pmh-url* "http://export.arxiv.org/oai2/")
@@ -62,27 +64,36 @@
 			       ,@(if set `(:set ,set))
 			       ,@(if resumption-token `(:resumption-token ,resumption-token)))))))
 
-(defun arxiv-list-all-identifiers (metadata-prefix &key from until set)
-  (let (res resumption-token)
-    (iter (while t)
-	  (let ((bunch (parse-oai-pmh-response
-			(if-first-time (apply #'arxiv-list-identifiers
-					      `(,@(if metadata-prefix `(:metadata-prefix ,metadata-prefix))
-						  ,@(if from `(:from ,from))
-						  ,@(if until `(:until ,until))
-						  ,@(if set `(:set ,set))))
-				       (if (not resumption-token)
-					   (terminate)
-					   (arxiv-list-identifiers :resumption-token resumption-token))))))
-	    (setf resumption-token nil)
-	    (iter (for elt in bunch)
-		  (cond ((not elt) (next-iteration))
-			((eq :resumption-token (car elt))
-			 (if resumption-token
-			     (error "Two resumption tokens in a bunch")
-			     (setf resumption-token (cadr elt))))
-			(t (push elt res))))))
-    (nreverse res)))
+(defmacro define-all-fetcher (name args base-name base-args)
+  (let ((g!-res (gensym "RES"))
+	(g!-resumption-token (gensym "RESUMPTION-TOKEN"))
+	(g!-bunch (gensym "BUNCH")))
+    `(defun ,name ,args
+       (let (,g!-res ,g!-resumption-token)
+	 (iter (while t)
+	       (let ((,g!-bunch (parse-oai-pmh-response
+				 (if-first-time (apply #',base-name ,base-args)
+						(if (not ,g!-resumption-token)
+						    (terminate)
+						    (,base-name :resumption-token ,g!-resumption-token))))))
+		 (setf ,g!-resumption-token nil)
+		 (iter (for elt in ,g!-bunch)
+		       (cond ((not elt) (next-iteration))
+			     ((eq :resumption-token (car elt))
+			      (if ,g!-resumption-token
+				  (error "Two resumption tokens in a bunch")
+				  (setf ,g!-resumption-token (cadr elt))))
+			     (t (push elt ,g!-res))))))
+	 (nreverse ,g!-res)))))
+
+
+(define-all-fetcher arxiv-list-all-identifiers (metadata-prefix &key from until set)
+  arxiv-list-identifiers
+  `(,@(if metadata-prefix `(:metadata-prefix ,metadata-prefix))
+      ,@(if from `(:from ,from))
+      ,@(if until `(:until ,until))
+      ,@(if set `(:set ,set))))
+
 	
 
 (defun arxiv-list-metadata-formats (&key identifier)
@@ -103,12 +114,23 @@
 			       ,@(if set `(:set ,set))
 			       ,@(if resumption-token `(:resumption-token ,resumption-token)))))))
 
+(define-all-fetcher arxiv-list-all-records (metadata-prefix &key from until set)
+  arxiv-list-records
+  `(,@(if metadata-prefix `(:metadata-prefix ,metadata-prefix))
+      ,@(if from `(:from ,from))
+      ,@(if until `(:until ,until))
+      ,@(if set `(:set ,set))))
+
+
 (defun arxiv-list-sets (&key resumption-token)
   (%parse-arxiv-response
    (http-retrying-get (apply #'compose-oai-pmh-request
 			     `(:list-sets
 			       ,@(if resumption-token `(:resumption-token ,resumption-token)))))))
 
+(define-all-fetcher arxiv-list-all-sets ()
+  arxiv-list-sets
+  ())
 
 ;; Now I can successfully do very basic requests.
 ;; I wonder, how to recognize resumption tokens in replies, how to use them
@@ -236,6 +258,21 @@
   (define-parser :resumption-token
     (list :resumption-token (caddr it) (cadr it))))
 
+(let ((*parsers* (get-parsers :list-records)))
+  (define-parser :record
+    (parse-as-list (cddr it)))
+  (define-parser :header
+    (cons :header (parse-as-list (cddr it))))
+  (define-default-parser-for :identifier :datestamp :set-spec)
+  (define-parser :metadata
+    (cons :metadata (parse-as-list (cddr it))))
+  (define-parser (:dc :oai-dc)
+    (cons :dc (parse-as-list (cddr it))))
+  (define-default-parser-for (:title :dc) (:creator :dc) (:subject :dc)
+			     (:description :dc)
+			     (:date :dc) (:type :dc) (:identifier :dc))
+  )
+
 
 (defun parse-oai-pmh-response (response)
   (if (not (equal '("OAI-PMH" . "http://www.openarchives.org/OAI/2.0/") (car response)))
@@ -262,7 +299,7 @@
 				 (error 'oai-pmh-error
 					:format-control "More then one response field in the response")
 				 (setf response-type it
-				       response-meat (cdr elt)))))))))
+				       response-meat (cddr elt)))))))))
     (setf errors (nreverse errors)
 	  rest (nreverse rest))
     (when errors
@@ -342,5 +379,5 @@ cursor=\"0\">xxx45abttyz</resumptionToken>
 ;; Now I more or less understand how resumptionToken works (it's a pity that to learn this
 ;; I made arXiv to work giving me IDs for entire year, which I threw away)
 ;; The important ingredients are resumptionTokens themselves as well as 503 http codes.
-;; How do I use this to fetch any amount of data?
+;; (done) How do I use this to fetch any amount of data?
 ;; How do I use this to write an iterator, such that I can put this into database in portions?
