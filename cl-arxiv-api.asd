@@ -10,5 +10,6 @@
   :components ((:file "package")
 	       (:file "compose-query")
 	       (:file "parse-query")
-               (:file "cl-arxiv-api")))
+               (:file "cl-arxiv-api")
+	       (:file "oai-pmh")))
 

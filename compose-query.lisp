@@ -54,6 +54,16 @@
   "Transform query form Lisp-form to string form"
   (%serialize-query query t))
 
+(defun http-simple-get (request)
+  (destructuring-bind (code headers stream)
+      (http-get request)
+    (if (equal 200 code)
+	(format nil "~{~a~^~%~}"
+		(iter (for line in-stream stream using #'read-line)
+		      (collect line)))
+	(error "Some error occured during request: ~a ~a" code headers))))
+
+
 (let ((sort-by-map '((:relevance . "relevance") (:rel . "relevance")
 		     (:last-updated . "lastUpdatedDate") (:update . "lastUpdatedDate")
 		     (:submitted . "submittedDate") (:submit . "submittedDate")
@@ -70,18 +80,12 @@
 	  (id-list-str (if id-list-p (format nil "~{~a~^,~}" id-list)))
 	  (sort-by-str (if sort-by-p #?"sortBy=$((cdr (assoc sort-by sort-by-map)))"))
 	  (sort-order-str (if sort-order-p #?"sortOrder=$((cdr (assoc sort-order sort-order-map)))")))
-      (destructuring-bind (code headers stream)
-	  (http-get (format nil #?"~aquery?~a"
-			    *arxiv-api-url*
-			    (format nil "~{~a~^&~}"
-				    (remove-if-not #'identity
-						   (list query-str id-list-str start-str max-results-str
-							 sort-by-str sort-order-str)))))
-	(if (equal 200 code)
-	    (format nil "~{~a~^~%~}"
-		    (iter (for line in-stream stream using #'read-line)
-			  (collect line)))
-	    (error "Some error occured during request: ~a ~a" code headers))))))
+      (http-simple-get (format nil #?"~aquery?~a"
+			       *arxiv-api-url*
+			       (format nil "~{~a~^&~}"
+				       (remove-if-not #'identity
+						      (list query-str id-list-str start-str max-results-str
+							    sort-by-str sort-order-str))))))))
   
 ;; I want to be able to write something like
 ;; (author (and "Morozov" "Mironov"))
