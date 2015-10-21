@@ -35,7 +35,7 @@
   (format nil "~a?verb=~a~a"
 	  *oai-pmh-url* (camelcaseize verb)
 	  (if args
-	      (format nil "?~{~a~^&~}" (mapcar (lambda (x)
+	      (format nil "&~{~a~^&~}" (mapcar (lambda (x)
 						 #?"$((subcamcaseize (car x)))=$((escape-url-query (cadr x)))")
 					       (group2 args)))
 	      "")))
@@ -52,15 +52,38 @@
 					     :identifier identifier
 					     :metadata-prefix metadata-prefix))))
 
-(defun arxiv-list-identifiers (metadata-prefix &key from until set resumption-token)
+(defun arxiv-list-identifiers (&key metadata-prefix from until set resumption-token)
   (%parse-arxiv-response
-   (http-simple-get (apply #'compose-oai-pmh-request
-			   `(:list-identifiers
-			     ,@(if from `(:from ,from))
-			     ,@(if until `(:until ,until))
-			     :metadata-prefix ,metadata-prefix
-			     ,@(if set `(:set ,set))
-			     ,@(if resumption-token `(:resumption-token ,resumption-token)))))))
+   (http-retrying-get (apply #'compose-oai-pmh-request
+			     `(:list-identifiers
+			       ,@(if from `(:from ,from))
+			       ,@(if until `(:until ,until))
+			       ,@(if metadata-prefix `(:metadata-prefix ,metadata-prefix))
+			       ,@(if set `(:set ,set))
+			       ,@(if resumption-token `(:resumption-token ,resumption-token)))))))
+
+(defun arxiv-list-all-identifiers (metadata-prefix &key from until set)
+  (let (res resumption-token)
+    (iter (while t)
+	  (let ((bunch (parse-oai-pmh-response
+			(if-first-time (apply #'arxiv-list-identifiers
+					      `(,@(if metadata-prefix `(:metadata-prefix ,metadata-prefix))
+						  ,@(if from `(:from ,from))
+						  ,@(if until `(:until ,until))
+						  ,@(if set `(:set ,set))))
+				       (if (not resumption-token)
+					   (terminate)
+					   (arxiv-list-identifiers :resumption-token resumption-token))))))
+	    (setf resumption-token nil)
+	    (iter (for elt in bunch)
+		  (cond ((not elt) (next-iteration))
+			((eq :resumption-token (car elt))
+			 (if resumption-token
+			     (error "Two resumption tokens in a bunch")
+			     (setf resumption-token (cadr elt))))
+			(t (push elt res))))))
+    (nreverse res)))
+	
 
 (defun arxiv-list-metadata-formats (&key identifier)
   (%parse-arxiv-response
@@ -70,21 +93,21 @@
 
 ;; OK, maybe metadata-prefix is not always required after all ...
 
-(defun arxiv-list-records (metadata-prefix &key from until set resumption-token)
+(defun arxiv-list-records (&key metadata-prefix from until set resumption-token)
   (%parse-arxiv-response
-   (http-simple-get (apply #'compose-oai-pmh-request
-			   `(:list-records
-			     ,@(if from `(:from ,from))
-			     ,@(if until `(:until ,until))
-			     :metadata-prefix ,metadata-prefix
-			     ,@(if set `(:set ,set))
-			     ,@(if resumption-token `(:resumption-token ,resumption-token)))))))
+   (http-retrying-get (apply #'compose-oai-pmh-request
+			     `(:list-records
+			       ,@(if from `(:from ,from))
+			       ,@(if until `(:until ,until))
+			       ,@(if metadata-prefix `(:metadata-prefix ,metadata-prefix))
+			       ,@(if set `(:set ,set))
+			       ,@(if resumption-token `(:resumption-token ,resumption-token)))))))
 
 (defun arxiv-list-sets (&key resumption-token)
   (%parse-arxiv-response
-   (http-simple-get (apply #'compose-oai-pmh-request
-			   `(:list-sets
-			     ,@(if resumption-token `(:resumption-token ,resumption-token)))))))
+   (http-retrying-get (apply #'compose-oai-pmh-request
+			     `(:list-sets
+			       ,@(if resumption-token `(:resumption-token ,resumption-token)))))))
 
 
 ;; Now I can successfully do very basic requests.
@@ -122,7 +145,8 @@
 ;; But what to do, if there are multiple errors in the same response?
 ;; Well, in this case I can just signal generic OAI-PMH-ERROR and it will crash the app
 
-  
+
+
 (defun error-message (err)
   (cadr err))
 
@@ -153,7 +177,9 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *response-parsers* (make-hash-table))
   (setf *default-namespace* :oai
-	*namespace-map* '((:oai . "http://www.openarchives.org/OAI/2.0/"))))
+	*namespace-map* '((:oai . "http://www.openarchives.org/OAI/2.0/")
+			  (:oai-dc . "http://www.openarchives.org/OAI/2.0/oai_dc/")
+			  (:dc . "http://purl.org/dc/elements/1.1/"))))
 
 (defun get-parsers (response-type)
   (or (gethash response-type *response-parsers*)
@@ -187,6 +213,29 @@
     (cons :schema (caddr it)))
   (define-parser :metadata-namespace
     (cons :namespace (caddr it))))
+
+(let ((*parsers* (get-parsers :get-record)))
+  (define-parser :record
+    (parse-as-list (cddr it)))
+  (define-parser :header
+    (cons :header (parse-as-list (cddr it))))
+  (define-default-parser-for :identifier :datestamp :set-spec)
+  (define-parser :metadata
+    (cons :metadata (parse-as-list (cddr it))))
+  (define-parser (:dc :oai-dc)
+    (cons :dc (parse-as-list (cddr it))))
+  (define-default-parser-for (:title :dc) (:creator :dc) (:subject :dc)
+			     (:description :dc)
+			     (:date :dc) (:type :dc) (:identifier :dc))
+  )
+
+(let ((*parsers* (get-parsers :list-identifiers)))
+  (define-parser :header
+    (parse-as-list (cddr it)))
+  (define-default-parser-for :identifier :datestamp :set-spec)
+  (define-parser :resumption-token
+    (list :resumption-token (caddr it) (cadr it))))
+
 
 (defun parse-oai-pmh-response (response)
   (if (not (equal '("OAI-PMH" . "http://www.openarchives.org/OAI/2.0/") (car response)))
@@ -271,7 +320,27 @@ cursor=\"0\">xxx45abttyz</resumptionToken>
 </ListIdentifiers>
 </OAI-PMH>")
 
+(defparameter *bkup-of-list-sets*
+  '(("cs" "Computer Science") ("math" "Mathematics") ("physics" "Physics")
+    ("physics:astro-ph" "Astrophysics") ("physics:cond-mat" "Condensed Matter")
+    ("physics:gr-qc" "General Relativity and Quantum Cosmology")
+    ("physics:hep-ex" "High Energy Physics - Experiment")
+    ("physics:hep-lat" "High Energy Physics - Lattice")
+    ("physics:hep-ph" "High Energy Physics - Phenomenology")
+    ("physics:hep-th" "High Energy Physics - Theory")
+    ("physics:math-ph" "Mathematical Physics")
+    ("physics:nlin" "Nonlinear Sciences") ("physics:nucl-ex" "Nuclear Experiment")
+    ("physics:nucl-th" "Nuclear Theory") ("physics:physics" "Physics (Other)")
+    ("physics:quant-ph" "Quantum Physics") ("q-bio" "Quantitative Biology")
+    ("q-fin" "Quantitative Finance") ("stat" "Statistics")))
+
 
 ;; OK, now I know (or, can easily know) such useful elements, as granularity and
 ;; earliest datestamp.
 ;; How do I use them to fetch the metadata I need?
+
+;; Now I more or less understand how resumptionToken works (it's a pity that to learn this
+;; I made arXiv to work giving me IDs for entire year, which I threw away)
+;; The important ingredients are resumptionTokens themselves as well as 503 http codes.
+;; How do I use this to fetch any amount of data?
+;; How do I use this to write an iterator, such that I can put this into database in portions?

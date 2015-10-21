@@ -54,6 +54,17 @@
   "Transform query form Lisp-form to string form"
   (%serialize-query query t))
 
+(define-condition http-get-error (error simple-condition)
+  ((code :initarg :code)
+   (headers :initarg :headers)))
+
+(defmethod print-object ((condition http-get-error) stream)
+  (if *print-escape*
+      (call-next-method)
+      (format stream "HTTP-GET-ERROR code: ~a, headers: ~a"
+	      (slot-value condition 'code)
+	      (slot-value condition 'headers))))
+
 (defun http-simple-get (request)
   (destructuring-bind (code headers stream)
       (http-get request)
@@ -61,8 +72,19 @@
 	(format nil "~{~a~^~%~}"
 		(iter (for line in-stream stream using #'read-line)
 		      (collect line)))
-	(error "Some error occured during request: ~a ~a" code headers))))
+	(error 'http-get-error :code code :headers headers))))
 
+(defun http-retrying-get (request)
+  (handler-case (http-simple-get request)
+    (http-get-error (e) (if (equal 503 (slot-value e 'code))
+			    (let ((delay (let ((it (cdr (assoc :retry-after (slot-value e 'headers)))))
+					   (if it
+					       (parse-integer it)
+					       10))))
+			      (warn "Got code 503, retrying after ~a seconds" delay)
+			      (sleep delay)
+			      (http-retrying-get request))
+			    (error e)))))
 
 (let ((sort-by-map '((:relevance . "relevance") (:rel . "relevance")
 		     (:last-updated . "lastUpdatedDate") (:update . "lastUpdatedDate")
