@@ -168,6 +168,25 @@
   (define-parser :description
     (cons kwd :parsing-not-implemented)))
 
+(let ((*parsers* (get-parsers :list-sets)))
+  (define-parser :set
+    (parse-as-list (cddr it)))
+  (define-parser :set-spec
+    (caddr it))
+  (define-parser :set-name
+    (caddr it))
+  (define-parser :resumption-token
+    (list (caddr it) (cadr it))))
+
+(let ((*parsers* (get-parsers :list-metadata-formats)))
+  (define-parser :metadata-format
+    (parse-as-list (cddr it)))
+  (define-parser :metadata-prefix
+    (cons :prefix (caddr it)))
+  (define-parser :schema
+    (cons :schema (caddr it)))
+  (define-parser :metadata-namespace
+    (cons :namespace (caddr it))))
 
 (defun parse-oai-pmh-response (response)
   (if (not (equal '("OAI-PMH" . "http://www.openarchives.org/OAI/2.0/") (car response)))
@@ -214,7 +233,45 @@
 	  (parse-as-list response-meat)))
     ))
 
-	
-    
-	  
-	
+(defparameter *sample-xml-with-resumption-token* "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<OAI-PMH xmlns=\"http://www.openarchives.org/OAI/2.0/\"
+xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"
+         xsi:schemaLocation=\"http://www.openarchives.org/OAI/2.0/
+         http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd\">
+<responseDate>2002-06-01T19:20:30Z</responseDate>
+<request verb=\"ListIdentifiers\" from=\"1998-01-15\"
+metadataPrefix=\"oldarXiv\"
+set=\"physics:hep\">http://an.oa.org/OAI-script</request>
+<ListIdentifiers>
+<header>
+<identifier>oai:arXiv.org:hep-th/9801001</identifier>
+<datestamp>1999-02-23</datestamp>
+<setSpec>physic:hep</setSpec>
+</header>
+<header>
+<identifier>oai:arXiv.org:hep-th/9801002</identifier>
+<datestamp>1999-03-20</datestamp>
+<setSpec>physic:hep</setSpec>
+<setSpec>physic:exp</setSpec>
+</header>
+<header>
+<identifier>oai:arXiv.org:hep-th/9801005</identifier>
+<datestamp>2000-01-18</datestamp>
+<setSpec>physic:hep</setSpec>
+</header>
+<header status=\"deleted\">
+<identifier>oai:arXiv.org:hep-th/9801010</identifier>
+<datestamp>1999-02-23</datestamp>
+<setSpec>physic:hep</setSpec>
+<setSpec>math</setSpec>
+</header>
+<resumptionToken expirationDate=\"2002-06-01T23:20:00Z\"
+completeListSize=\"6\"
+cursor=\"0\">xxx45abttyz</resumptionToken>
+</ListIdentifiers>
+</OAI-PMH>")
+
+
+;; OK, now I know (or, can easily know) such useful elements, as granularity and
+;; earliest datestamp.
+;; How do I use them to fetch the metadata I need?
