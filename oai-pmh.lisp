@@ -126,6 +126,8 @@
 (defun error-message (err)
   (cadr err))
 
+;; TODO: this is better done via destringify-symbol, of course
+
 (defparameter *err-code->sym* '(("badArgument" . bad-argument)
 				("badResumptionToken" . bad-resumption-token)
 				("badVerb" . bad-verb)
@@ -135,23 +137,64 @@
 				("noMetadataFormats" . no-metadata-formats)
 				("noSetHierarchy" . no-set-hierarchy)))
 
+(defparameter *known-responses* '(("Identify" . :identify)
+				  ("GetRecord" . :get-record)
+				  ("ListIdentifiers" . :list-identifiers)
+				  ("ListMetadataFormats" . :list-metadata-formats)
+				  ("ListRecords" . :list-records)
+				  ("ListSets" . :list-sets)))
+
+
 (defun error-symbol (err)
   (let ((it (cadr (assoc "code" (car err) :test #'equal))))
     (or (cdr (assoc it *err-code->sym* :test #'equal))
 	it)))
-	      
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defparameter *response-parsers* (make-hash-table))
+  (setf *default-namespace* :oai
+	*namespace-map* '((:oai . "http://www.openarchives.org/OAI/2.0/"))))
+
+(defun get-parsers (response-type)
+  (or (gethash response-type *response-parsers*)
+      (setf (gethash response-type *response-parsers*)
+	    (make-hash-table :test #'equal))))
+
+
+(let ((*parsers* (get-parsers :identify)))
+  (define-default-parser-for :repository-name :base-u-r-l :protocol-version :earliest-datestamp
+			     :admin-email
+			     :deleted-record :granularity)
+  (define-parser :description
+    (cons kwd :parsing-not-implemented)))
+
 
 (defun parse-oai-pmh-response (response)
   (if (not (equal '("OAI-PMH" . "http://www.openarchives.org/OAI/2.0/") (car response)))
       (error "Expected response to be OAI-PMH v2.0, but got: ~a, please investigate manually."
 	     (car response)))
   (let ((errors nil)
-	(rest nil))
+	(rest nil)
+	(response-type nil)
+	(response-meat nil)
+	(request-type nil))
     (iter (for elt in (cdr response))
 	  (cond ((and (stringp elt) (string= #?"\n" elt))
 		 (next-iteration))
 		((equal "error" (caar elt)) (push (cdr elt) errors))
-		(t (push elt rest))))
+		(t (push elt rest)
+		   (if (equal "request" (caar elt))
+		       (if request-type
+			   (error 'oai-pmh-error
+				  :format-control "More then one request field in the response")
+			   (setf request-type (cadr (assoc "verb" (cadr elt) :test #'equal))))
+		       (let ((it (cdr (assoc (caar elt) *known-responses* :test #'equal))))
+			 (if it
+			     (if response-type
+				 (error 'oai-pmh-error
+					:format-control "More then one response field in the response")
+				 (setf response-type it
+				       response-meat (cdr elt)))))))))
     (setf errors (nreverse errors)
 	  rest (nreverse rest))
     (when errors
@@ -161,7 +204,15 @@
 		 :format-arguments (list (error-message (car errors)))
 		 :rest rest)
 	  (error 'oai-pmh-error :errors errors :rest rest)))
-    rest))
+    (if (and response-type request-type
+	     (not (eq response-type (cdr (assoc request-type *known-responses* :test #'equal)))))
+	(error 'oai-pmh-error :format-control "Request and response types don't match: ~a vs ~a"
+	       request-type response-type))
+    (if (not response-type)
+	(cons :unknown-response rest)
+	(let ((*parsers* (get-parsers response-type)))
+	  (parse-as-list response-meat)))
+    ))
 
 	
     
