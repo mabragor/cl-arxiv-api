@@ -271,8 +271,8 @@
   (define-default-parser-for (:title :dc) (:creator :dc) (:subject :dc)
 			     (:description :dc)
 			     (:date :dc) (:type :dc) (:identifier :dc))
-  )
-
+  (define-parser :resumption-token
+    (list :resumption-token (caddr it) (cadr it))))
 
 (defun parse-oai-pmh-response (response)
   (if (not (equal '("OAI-PMH" . "http://www.openarchives.org/OAI/2.0/") (car response)))
