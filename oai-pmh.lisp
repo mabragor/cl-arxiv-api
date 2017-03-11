@@ -275,7 +275,6 @@
     (list :resumption-token (caddr it) (cadr it)))
   )
 
-
 (defun parse-oai-pmh-response (response)
   (if (not (equal '("OAI-PMH" . "http://www.openarchives.org/OAI/2.0/") (car response)))
       (error "Expected response to be OAI-PMH v2.0, but got: ~a, please investigate manually."
