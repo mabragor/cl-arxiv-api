@@ -270,7 +270,9 @@
     (cons :dc (parse-as-list (cddr it))))
   (define-default-parser-for (:title :dc) (:creator :dc) (:subject :dc)
 			     (:description :dc)
-			     (:date :dc) (:type :dc) (:identifier :dc))
+			     (:date :dc) (:type :dc) (:identifier :dc) (:language :dc))
+  (define-parser :resumption-token
+    (list :resumption-token (caddr it) (cadr it)))
   )
 
 
