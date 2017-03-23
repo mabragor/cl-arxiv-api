@@ -95,19 +95,25 @@
 			)))
   (defun arxiv-get-raw (query &key
 			(start nil start-p) (max-results nil max-results-p) (id-list nil id-list-p)
-			(sort-by nil sort-by-p) (sort-order nil sort-order-p))
+                                (sort-by nil sort-by-p) (sort-order nil sort-order-p)
+                                (auto-retry nil))
     (let ((query-str (if query #?"search_query=$((escape-url-query (serialize-query query)))"))
 	  (start-str (if start-p #?"start=$(start)"))
 	  (max-results-str (if max-results-p #?"max_results=$(max-results)"))
-	  (id-list-str (if id-list-p (format nil "~{~a~^,~}" id-list)))
+	  (id-list-str (if id-list-p (format nil "id_list=~{~a~^,~}" id-list)))
 	  (sort-by-str (if sort-by-p #?"sortBy=$((cdr (assoc sort-by sort-by-map)))"))
 	  (sort-order-str (if sort-order-p #?"sortOrder=$((cdr (assoc sort-order sort-order-map)))")))
-      (http-simple-get (format nil #?"~aquery?~a"
-			       *arxiv-api-url*
-			       (format nil "~{~a~^&~}"
-				       (remove-if-not #'identity
-						      (list query-str id-list-str start-str max-results-str
-							    sort-by-str sort-order-str))))))))
+      ;; (format t "id list: ~a~%" id-list-str)
+      (let ((final-query (format nil #?"~aquery?~a"
+                                 *arxiv-api-url*
+                                 (format nil "~{~a~^&~}"
+                                         (remove-if-not #'identity
+                                                        (list query-str id-list-str start-str max-results-str
+                                                              sort-by-str sort-order-str))))))
+        ;; (format t "final query: ~a~%" final-query)
+        (if auto-retry
+            (http-retrying-get final-query)
+            (http-simple-get final-query))))))
   
 ;; I want to be able to write something like
 ;; (author (and "Morozov" "Mironov"))
